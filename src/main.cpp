@@ -38,7 +38,16 @@ bool gWireframe = false;
 FPSCamera fpsCamera(glm::vec3(0.0f, 3.0f, 10.0f));
 constexpr double ZOOM_SENSITIVITY = -3.0;
 constexpr float MOVE_SPEED = 5.0f; // units per second
-constexpr float MOUSE_SENSITIVITY = 750.0f;
+float MOUSE_SENSITIVITY = 750.0f;
+glm::vec4 backgroundColor = glm::vec4(0.23f, 0.38f, 0.47f, 1.0f);
+
+struct ControlsDefaults {
+    static constexpr float ROTATION_X = 0.0f;
+    static constexpr float ROTATION_Y = 0.0f;
+    static constexpr float ZOOM = 45.0f;
+    static constexpr float MOUSE_SENSITIVITY = 750.0f;
+	static constexpr float DEFAULT_BG_COLOR[4] = {0.23f, 0.38f, 0.47f, 1.0f};
+};
 
 bool isDragging = false;
 const float DRAG_THRESHOLD = 5.0f;
@@ -50,6 +59,7 @@ double lastMouseY = 0.0;
 
 float modelRotationAngleX = 0.0;
 float modelRotationAngleY = 0.0;
+
 
 // Function prototypes
 void glfw_onKey(GLFWwindow *window, int key, int scancode, int action, int mode);
@@ -63,6 +73,9 @@ void initImGUI();
 Mesh *selectedMesh = nullptr;
 Texture2D *selectedTexture = nullptr;
 bool showModelLoaderTool = false;
+bool showModelControls = false;
+
+float zoomLevel = 45.0f;
 
 std::string modelPath;
 std::string texturePath;
@@ -110,8 +123,54 @@ void renderMenuBar()
             ImGui::EndMenu();
         }
 
+		if (ImGui::BeginMenu("Controls"))
+		{
+			showModelControls = !showModelControls;
+			ImGui::EndMenu();
+		}
+
+
         ImGui::EndMainMenuBar();
     }
+
+	if (showModelControls)
+	{
+		ImGui::Begin("Model Controls", &showModelControls);
+		ImGui::SliderFloat("Rotation X", &modelRotationAngleX, -180.0f, 180.0f);
+		ImGui::SliderFloat("Rotation Y", &modelRotationAngleY, -180.0f, 180.0f);
+
+		if (ImGui::SliderFloat("Zoom (FOV)", &zoomLevel, 1.0f, 120.0f))
+		{
+			fpsCamera.setFOV(zoomLevel);
+		}
+
+		ImGui::SliderFloat("Rotation Speed", &MOUSE_SENSITIVITY, 100.0f, 900.0f);
+		ImGui::Separator();
+    
+		float color[4] = { backgroundColor.r, backgroundColor.g, backgroundColor.b, backgroundColor.a };
+		if (ImGui::ColorEdit4("Background Color", color))
+		{
+			backgroundColor = glm::vec4(color[0], color[1], color[2], color[3]);
+		}
+
+		ImGui::Separator();
+		if (ImGui::Button("Reset to Defaults"))
+		{
+			modelRotationAngleX = ControlsDefaults::ROTATION_X;
+			modelRotationAngleY = ControlsDefaults::ROTATION_Y;
+			zoomLevel = ControlsDefaults::ZOOM;
+			MOUSE_SENSITIVITY = ControlsDefaults::MOUSE_SENSITIVITY;
+			fpsCamera.setFOV(ControlsDefaults::ZOOM);
+			backgroundColor = glm::vec4(
+				ControlsDefaults::DEFAULT_BG_COLOR[0],
+				ControlsDefaults::DEFAULT_BG_COLOR[1],
+				ControlsDefaults::DEFAULT_BG_COLOR[2],
+				ControlsDefaults::DEFAULT_BG_COLOR[3]
+			);
+		}
+
+		ImGui::End();
+	}
 
     if (showModelLoaderTool)
     {
@@ -212,6 +271,7 @@ int main()
         update(deltaTime);
 
         // Clear the screen
+		glClearColor(backgroundColor.r, backgroundColor.g, backgroundColor.b, backgroundColor.a);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         glm::mat4 model(1.0), view(1.0), projection(1.0);
@@ -233,10 +293,10 @@ int main()
         // Render the scene
         glm::mat4 position = glm::translate(glm::mat4(1.0), glm::vec3(0.0f, 0.0f, 0.0f));
         glm::mat4 scaling = glm::scale(glm::mat4(1.0), glm::vec3(1.0f, 1.0f, 1.0f));
-        glm::mat4 rotationX = glm::rotate(glm::mat4(1.0f), glm::radians(modelRotationAngleX), glm::vec3(1.0f, 0.0f, 0.0f));
-        glm::mat4 rotationY = glm::rotate(glm::mat4(1.0f), glm::radians(modelRotationAngleY), glm::vec3(0.0f, 1.0f, 0.0f));
+        glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), glm::radians(modelRotationAngleX), glm::vec3(1.0f, 0.0f, 0.0f));
+        rotation = glm::rotate(rotation, glm::radians(modelRotationAngleY), glm::vec3(0.0f, 1.0f, 0.0f));
 
-        model = position * rotationX * rotationY * scaling;
+        model = position * rotation * scaling;
         shaderProgram.setUniform("model", model);
 
         if (selectedTexture != nullptr)
@@ -336,7 +396,7 @@ bool initOpenGL()
     // glfwSetInputMode(gWindow, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
     // glfwSetCursorPos(gWindow, gWindowWidth / 2.0, gWindowHeight / 2.0);
 
-    glClearColor(0.23f, 0.38f, 0.47f, 1.0f);
+    glClearColor(backgroundColor.r, backgroundColor.g, backgroundColor.b, backgroundColor.a);
 
     // Define the viewport dimensions
     glViewport(0, 0, gWindowWidth, gWindowHeight);
@@ -378,7 +438,7 @@ void glfw_onFramebufferSize(GLFWwindow *window, int width, int height)
 //-----------------------------------------------------------------------------
 void glfw_onMouseScroll(GLFWwindow *window, double deltaX, double deltaY)
 {
-    double fov = fpsCamera.getFOV() + deltaY * ZOOM_SENSITIVITY;
+    double fov = zoomLevel  + deltaY * ZOOM_SENSITIVITY;
 
     fov = glm::clamp(fov, 1.0, 120.0);
 
@@ -390,6 +450,12 @@ void glfw_onMouseScroll(GLFWwindow *window, double deltaX, double deltaY)
 //-----------------------------------------------------------------------------
 void update(double elapsedTime)
 {
+	if (ImGui::GetIO().WantCaptureMouse)
+    {
+        isDragging = false;
+        return;
+    }
+
     double mouseX, mouseY;
     glfwGetCursorPos(gWindow, &mouseX, &mouseY);
 
